@@ -44,15 +44,15 @@ class Magic:
         magic_file - use a mime database other than the system default
         keep_going - don't stop at the first match, keep going
         """
-        flags = MAGIC_NONE
+        self.flags = MAGIC_NONE
         if mime:
-            flags |= MAGIC_MIME
+            self.flags |= MAGIC_MIME
         elif mime_encoding:
-            flags |= MAGIC_MIME_ENCODING
+            self.flags |= MAGIC_MIME_ENCODING
         if keep_going:
-            flags |= MAGIC_CONTINUE
+            self.flags |= MAGIC_CONTINUE
 
-        self.cookie = magic_open(flags)
+        self.cookie = magic_open(self.flags)
 
         magic_load(self.cookie, magic_file)
 
@@ -63,7 +63,10 @@ class Magic:
         Identify the contents of `buf`
         """
         self._thread_check()
-        return magic_buffer(self.cookie, buf)
+        try:
+            return magic_buffer(self.cookie, buf)
+        except MagicException as e:
+            return self._handle509Bug(e)
 
     def from_file(self, filename):
         """
@@ -73,8 +76,17 @@ class Magic:
         self._thread_check()
         if not os.path.exists(filename):
             raise IOError("File does not exist: " + filename)
+        try:
+            return magic_file(self.cookie, filename)
+        except MagicException as e:
+            return self._handle509Bug(e)
 
-        return magic_file(self.cookie, filename)
+    def _handle509Bug(self, e):
+        # libmagic 5.09 has a bug where it might mail to identify the
+        # mimetype of a file and returns null from magic_file (and
+        # likely _buffer), but also does not return an error message.
+        if e.message is None and (self.flags & MAGIC_MIME):
+            return "application/octet-stream"
 
     def _thread_check(self):
         if self.thread != threading.currentThread():
@@ -112,7 +124,7 @@ def from_file(filename, mime=False):
     Accepts a filename and returns the detected filetype.  Return
     value is the mimetype if mime=True, otherwise a human readable
     name.
-    
+
     >>> magic.from_file("testdata/test.pdf", mime=True)
     'application/pdf'
     """
@@ -143,12 +155,11 @@ if dll:
     libmagic = ctypes.CDLL(dll)
 
 if not libmagic or not libmagic._name:
-    import sys
     platform_to_lib = {'darwin': ['/opt/local/lib/libmagic.dylib',
                                   '/usr/local/lib/libmagic.dylib'] +
-                       # Assumes there will only be one version installed
-                       glob.glob('/usr/local/Cellar/libmagic/*/lib/libmagic.dylib'),
-                       'win32':  ['magic1.dll']}
+                         # Assumes there will only be one version installed
+                         glob.glob('/usr/local/Cellar/libmagic/*/lib/libmagic.dylib'),
+                       'win32':  ['magic1.dll','cygmagic-1.dll']}
     for dll in platform_to_lib.get(sys.platform, []):
         try:
             libmagic = ctypes.CDLL(dll)
@@ -175,12 +186,23 @@ def errorcheck_negative_one(result, func, args):
         raise MagicException(err)
     else:
         return result
-    
+
 
 def coerce_filename(filename):
     if filename is None:
         return None
-    return filename.encode(sys.getfilesystemencoding())
+
+    # ctypes will implicitly convert unicode strings to bytes with
+    # .encode('ascii').  A more useful default here is
+    # getfilesystemencoding().  We need to leave byte-str unchanged.
+    is_unicode = (sys.version_info.major <= 2 and
+                  isinstance(filename, unicode)) or \
+                  (sys.version_info.major >= 3 and 
+                   isinstance(filename, str))
+    if is_unicode:
+        return filename.encode(sys.getfilesystemencoding())
+    else:
+        return filename
 
 magic_open = libmagic.magic_open
 magic_open.restype = magic_t
