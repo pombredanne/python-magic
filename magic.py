@@ -148,7 +148,7 @@ def from_buffer(buffer, mime=False):
 
 libmagic = None
 # Let's try to find magic or magic1
-dll = ctypes.util.find_library('magic') or ctypes.util.find_library('magic1')
+dll = ctypes.util.find_library('magic') or ctypes.util.find_library('magic1') or ctypes.util.find_library('cygmagic-1')
 
 # This is necessary because find_library returns None if it doesn't find the library
 if dll:
@@ -195,9 +195,9 @@ def coerce_filename(filename):
     # ctypes will implicitly convert unicode strings to bytes with
     # .encode('ascii').  A more useful default here is
     # getfilesystemencoding().  We need to leave byte-str unchanged.
-    is_unicode = (sys.version_info.major <= 2 and
+    is_unicode = (sys.version_info[0] <= 2 and
                   isinstance(filename, unicode)) or \
-                  (sys.version_info.major >= 3 and 
+                  (sys.version_info[0] >= 3 and
                    isinstance(filename, str))
     if is_unicode:
         return filename.encode(sys.getfilesystemencoding())
