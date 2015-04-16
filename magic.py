@@ -35,7 +35,7 @@ class Magic:
     """
 
     def __init__(self, mime=False, magic_file=None, mime_encoding=False,
-                 keep_going=False):
+                 keep_going=False, uncompress=False):
         """
         Create a new libmagic wrapper.
 
@@ -43,16 +43,20 @@ class Magic:
         mime_encoding - if True, codec is returned
         magic_file - use a mime database other than the system default
         keep_going - don't stop at the first match, keep going
+        uncompress - Try to look inside compressed files.
         """
-        flags = MAGIC_NONE
+        self.flags = MAGIC_NONE
         if mime:
-            flags |= MAGIC_MIME
+            self.flags |= MAGIC_MIME
         elif mime_encoding:
-            flags |= MAGIC_MIME_ENCODING
+            self.flags |= MAGIC_MIME_ENCODING
         if keep_going:
-            flags |= MAGIC_CONTINUE
+            self.flags |= MAGIC_CONTINUE
 
-        self.cookie = magic_open(flags)
+        if uncompress:
+            self.flags |= MAGIC_COMPRESS
+
+        self.cookie = magic_open(self.flags)
 
         magic_load(self.cookie, magic_file)
 
@@ -63,7 +67,10 @@ class Magic:
         Identify the contents of `buf`
         """
         self._thread_check()
-        return magic_buffer(self.cookie, buf)
+        try:
+            return magic_buffer(self.cookie, buf)
+        except MagicException as e:
+            return self._handle509Bug(e)
 
     def from_file(self, filename):
         """
@@ -73,8 +80,17 @@ class Magic:
         self._thread_check()
         if not os.path.exists(filename):
             raise IOError("File does not exist: " + filename)
+        try:
+            return magic_file(self.cookie, filename)
+        except MagicException as e:
+            return self._handle509Bug(e)
 
-        return magic_file(self.cookie, filename)
+    def _handle509Bug(self, e):
+        # libmagic 5.09 has a bug where it might fail to identify the
+        # mimetype of a file and returns null from magic_file (and
+        # likely _buffer), but also does not return an error message.
+        if e.message is None and (self.flags & MAGIC_MIME):
+            return "application/octet-stream"
 
     def _thread_check(self):
         if self.thread != threading.currentThread():
@@ -90,7 +106,7 @@ class Magic:
         # during shutdown magic_close may have been cleared already so
         # make sure it exists before using it.
 
-        # the self.cookie check should be unnessary and was an
+        # the self.cookie check should be unnecessary and was an
         # incorrect fix for a threading problem, however I'm leaving
         # it in because it's harmless and I'm slightly afraid to
         # remove it.
@@ -112,7 +128,7 @@ def from_file(filename, mime=False):
     Accepts a filename and returns the detected filetype.  Return
     value is the mimetype if mime=True, otherwise a human readable
     name.
-    
+
     >>> magic.from_file("testdata/test.pdf", mime=True)
     'application/pdf'
     """
@@ -136,19 +152,20 @@ def from_buffer(buffer, mime=False):
 
 libmagic = None
 # Let's try to find magic or magic1
-dll = ctypes.util.find_library('magic') or ctypes.util.find_library('magic1')
+dll = ctypes.util.find_library('magic') or ctypes.util.find_library('magic1') or ctypes.util.find_library('cygmagic-1')
 
 # This is necessary because find_library returns None if it doesn't find the library
 if dll:
     libmagic = ctypes.CDLL(dll)
 
 if not libmagic or not libmagic._name:
-    import sys
+    windows_dlls = ['magic1.dll','cygmagic-1.dll']
     platform_to_lib = {'darwin': ['/opt/local/lib/libmagic.dylib',
                                   '/usr/local/lib/libmagic.dylib'] +
-                       # Assumes there will only be one version installed
-                       glob.glob('/usr/local/Cellar/libmagic/*/lib/libmagic.dylib'),
-                       'win32':  ['magic1.dll']}
+                         # Assumes there will only be one version installed
+                         glob.glob('/usr/local/Cellar/libmagic/*/lib/libmagic.dylib'),
+                       'win32': windows_dlls,
+                       'cygwin': windows_dlls }
     for dll in platform_to_lib.get(sys.platform, []):
         try:
             libmagic = ctypes.CDLL(dll)
@@ -175,12 +192,24 @@ def errorcheck_negative_one(result, func, args):
         raise MagicException(err)
     else:
         return result
-    
+
 
 def coerce_filename(filename):
     if filename is None:
         return None
-    return filename.encode(sys.getfilesystemencoding())
+
+    # ctypes will implicitly convert unicode strings to bytes with
+    # .encode('ascii').  If you use the filesystem encoding 
+    # then you'll get inconsistent behavior (crashes) depending on the user's
+    # LANG environment variable
+    is_unicode = (sys.version_info[0] <= 2 and
+                  isinstance(filename, unicode)) or \
+                  (sys.version_info[0] >= 3 and
+                   isinstance(filename, str))
+    if is_unicode:
+        return filename.encode('utf-8')
+    else:
+        return filename
 
 magic_open = libmagic.magic_open
 magic_open.restype = magic_t
