@@ -26,7 +26,12 @@ import threading
 
 from ctypes import c_char_p, c_int, c_size_t, c_void_p
 
-class MagicException(Exception): pass
+
+class MagicException(Exception):
+    def __init__(self, message):
+        super(MagicException, self).__init__(message)
+        self.message = message
+
 
 class Magic:
     """
@@ -57,33 +62,29 @@ class Magic:
             self.flags |= MAGIC_COMPRESS
 
         self.cookie = magic_open(self.flags)
-
+        self.lock = threading.Lock()
+        
         magic_load(self.cookie, magic_file)
-
-        self.thread = threading.currentThread()
 
     def from_buffer(self, buf):
         """
         Identify the contents of `buf`
         """
-        self._thread_check()
-        try:
-            return magic_buffer(self.cookie, buf)
-        except MagicException as e:
-            return self._handle509Bug(e)
+        with self.lock:
+            try:
+                return magic_buffer(self.cookie, buf)
+            except MagicException as e:
+                return self._handle509Bug(e)
 
     def from_file(self, filename):
-        """
-        Identify the contents of file `filename`
-        raises IOError if the file does not exist
-        """
-        self._thread_check()
-        if not os.path.exists(filename):
-            raise IOError("File does not exist: " + filename)
-        try:
-            return magic_file(self.cookie, filename)
-        except MagicException as e:
-            return self._handle509Bug(e)
+        # raise FileNotFoundException or IOError if the file does not exist
+        with open(filename):
+            pass
+        with self.lock:
+            try:
+                return magic_file(self.cookie, filename)
+            except MagicException as e:
+                return self._handle509Bug(e)
 
     def _handle509Bug(self, e):
         # libmagic 5.09 has a bug where it might fail to identify the
@@ -91,13 +92,6 @@ class Magic:
         # likely _buffer), but also does not return an error message.
         if e.message is None and (self.flags & MAGIC_MIME):
             return "application/octet-stream"
-
-    def _thread_check(self):
-        if self.thread != threading.currentThread():
-            raise Exception('attempting to use libmagic on multiple threads will '
-                            'end in SEGV.  Prefer to use the module functions '
-                            'from_file or from_buffer, or carefully manage direct '
-                            'use of the Magic class')
 
     def __del__(self):
         # no _thread_check here because there can be no other
@@ -114,13 +108,12 @@ class Magic:
             magic_close(self.cookie)
             self.cookie = None
 
-
-instances = threading.local()
+_instances = {}
 
 def _get_magic_type(mime):
-    i = instances.__dict__.get(mime)
+    i = _instances.get(mime)
     if i is None:
-        i = instances.__dict__[mime] = Magic(mime=mime)
+        i = _instances[mime] = Magic(mime=mime)
     return i
 
 def from_file(filename, mime=False):
@@ -267,43 +260,24 @@ magic_compile.argtypes = [magic_t, c_char_p]
 
 
 MAGIC_NONE = 0x000000 # No flags
-
 MAGIC_DEBUG = 0x000001 # Turn on debugging
-
 MAGIC_SYMLINK = 0x000002 # Follow symlinks
-
 MAGIC_COMPRESS = 0x000004 # Check inside compressed files
-
 MAGIC_DEVICES = 0x000008 # Look at the contents of devices
-
 MAGIC_MIME = 0x000010 # Return a mime string
-
 MAGIC_MIME_ENCODING = 0x000400 # Return the MIME encoding
-
 MAGIC_CONTINUE = 0x000020 # Return all matches
-
 MAGIC_CHECK = 0x000040 # Print warnings to stderr
-
 MAGIC_PRESERVE_ATIME = 0x000080 # Restore access time on exit
-
 MAGIC_RAW = 0x000100 # Don't translate unprintable chars
-
 MAGIC_ERROR = 0x000200 # Handle ENOENT etc as real errors
 
 MAGIC_NO_CHECK_COMPRESS = 0x001000 # Don't check for compressed files
-
 MAGIC_NO_CHECK_TAR = 0x002000 # Don't check for tar files
-
 MAGIC_NO_CHECK_SOFT = 0x004000 # Don't check magic entries
-
 MAGIC_NO_CHECK_APPTYPE = 0x008000 # Don't check application type
-
 MAGIC_NO_CHECK_ELF = 0x010000 # Don't check for elf details
-
 MAGIC_NO_CHECK_ASCII = 0x020000 # Don't check for ascii files
-
 MAGIC_NO_CHECK_TROFF = 0x040000 # Don't check ascii/troff
-
 MAGIC_NO_CHECK_FORTRAN = 0x080000 # Don't check ascii/fortran
-
 MAGIC_NO_CHECK_TOKENS = 0x100000 # Don't check ascii/tokens

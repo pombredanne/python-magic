@@ -1,3 +1,7 @@
+import os, sys
+# for output which reports a local time
+os.environ['TZ'] = 'GMT'
+import shutil
 import os.path
 import unittest
 
@@ -13,24 +17,37 @@ class MagicTest(unittest.TestCase):
             except TypeError:
                 filename = os.path.join(self.TESTDATA_DIR.encode('utf-8'), filename)
 
-            with open(filename, 'rb') as f:
-                value = m.from_buffer(f.read())
-                expected_value_bytes = expected_value.encode('utf-8')
-                self.assertEqual(value, expected_value_bytes)
+            
+            if type(expected_value) is not tuple:
+                expected_value = (expected_value,)
 
-            value = m.from_file(filename)
-            self.assertEqual(value, expected_value_bytes)
-        
+            for i in expected_value:
+                expected_value_bytes = i.encode('utf-8')
+
+                with open(filename, 'rb') as f:
+                    buf_value = m.from_buffer(f.read())
+
+                file_value = m.from_file(filename)
+                if buf_value == expected_value_bytes and file_value == expected_value_bytes:
+                    break
+            else:
+                self.assertTrue(False, "no match for " + repr(expected_value))
+                
     def test_mime_types(self):
-        m = magic.Magic(mime=True)
-        self.assert_values(m, {
-            'magic.pyc': 'application/octet-stream',
-            'test.pdf': 'application/pdf',
-            'test.gz': 'application/x-gzip',
-            'text.txt': 'text/plain',
-            b'\xce\xbb'.decode('utf-8'): 'text/plain',
-            b'\xce\xbb': 'text/plain',
-        })
+        dest = os.path.join(MagicTest.TESTDATA_DIR, b'\xce\xbb'.decode('utf-8'))
+        shutil.copyfile(os.path.join(MagicTest.TESTDATA_DIR, 'lambda'), dest)
+        try:
+            m = magic.Magic(mime=True)
+            self.assert_values(m, {
+                'magic.pyc': 'application/octet-stream',
+                'test.pdf': 'application/pdf',
+                'test.gz': 'application/gzip',
+                'text.txt': 'text/plain',
+                b'\xce\xbb'.decode('utf-8'): 'text/plain',
+                b'\xce\xbb': 'text/plain',
+            })
+        finally:
+            os.unlink(dest)
 
     def test_descriptions(self):
         m = magic.Magic()
@@ -39,8 +56,9 @@ class MagicTest(unittest.TestCase):
             self.assert_values(m, {
                 'magic.pyc': 'python 2.4 byte-compiled',
                 'test.pdf': 'PDF document, version 1.2',
-                'test.gz': 'gzip compressed data, was "test", from Unix, '
-                           'last modified: Sun Jun 29 01:32:52 2008',
+                'test.gz':
+                ('gzip compressed data, was "test", from Unix, last modified: Sun Jun 29 01:32:52 2008',
+                 'gzip compressed data, was "test", last modified: Sun Jun 29 01:32:52 2008, from Unix'),
                 'text.txt': 'ASCII text',
             })
         finally:
@@ -69,7 +87,7 @@ class MagicTest(unittest.TestCase):
 
         m = magic.Magic(mime=True)
         self.assertEqual(m.from_file(filename), 
-                         'application/octet-stream'.encode('utf-8'))
+                         'image/jpeg'.encode('utf-8'))
         
         m = magic.Magic(mime=True, keep_going=True)
         self.assertEqual(m.from_file(filename), 'image/jpeg'.encode('utf-8'))

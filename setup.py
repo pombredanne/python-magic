@@ -1,29 +1,27 @@
-from setuptools import setup, Extension
-#from distutils.core import setup, Extension
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from setuptools import setup
 
 setup(name='python-magic',
       description='File type identification using libmagic',
       author='Adam Hupp',
       author_email='adam@hupp.org',
       url="http://github.com/ahupp/python-magic",
-      version='0.4.6',
+      version='0.4.11',
       py_modules=['magic'],
       long_description="""This module uses ctypes to access the libmagic file type
 identification library.  It makes use of the local magic database and
 supports both textual and MIME-type output.
 """,
       keywords="mime magic file",
-      license="PSF",
+      license="MIT",
       test_suite='test',
       classifiers=[
           'Intended Audience :: Developers',
-          'Python Software Foundation License',
+          'License :: OSI Approved :: MIT License',
           'Programming Language :: Python',
           'Programming Language :: Python :: 2',
-          'Programming Language :: Python :: 2.6',
-          'Programming Language :: Python :: 2.7',
           'Programming Language :: Python :: 3',
-          'Programming Language :: Python :: 3.2',
-          'Programming Language :: Python :: 3.3',
       ],
       )

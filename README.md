@@ -55,9 +55,7 @@ Other sources:
 
 ### Dependencies
 
-On Windows, install Cygwin (http://cygwin.com/install.html).  To find
-the libraries, either add <your-cygwin-install>/bin to the $PATH or
-copy cygwin1.dll, cygz.dll, and cygmagic-1.dll to C:\Windows\System32
+On Windows, copy magic1.dll, regex2.dll, and zlib1.dll onto your PATH from the Binaries and Dependencies zipfiles provided by the [File for Windows](http://gnuwin32.sourceforge.net/packages/file.htm) project.  You will need to copy the file `magic` out of `[binary-zip]\share\misc`, and pass it's location to `Magic(magic_file=...)`
 
 On OSX:
 
@@ -76,6 +74,9 @@ On OSX:
   python will fail with this error.  I'm not aware of any publically
   available 64-bit builds of libmagic.  You'll either need to build
   them yourself (please share docs!), or switch to a 32-bit Python.
+
+- 'WindowsError: exception: access violation writing 0x00000000 ' This may indicate you are mixing 
+  Windows Python and Cygwin Python. Make sure your libmagic and python builds are consistent.
 
 ## Author
 
